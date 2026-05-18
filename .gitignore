@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.env
+.idea/
+.vscode/
+.claude/
+chrome-profile/
+*.log
+build/
+dist/
+.pytest_cache/
+.ruff_cache/

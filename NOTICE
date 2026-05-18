@@ -1,0 +1,80 @@
+# NOTICE — silent-browser-use
+
+This product depends on, was inspired by, and is grateful to several upstream
+projects. None of their source code is redistributed inside this repository.
+
+---
+
+## Primary dependency: vercel-labs/agent-browser
+
+- **Project:** https://github.com/vercel-labs/agent-browser
+- **License:** Apache License 2.0
+- **Maintainer:** Vercel Labs and contributors
+- **Role in silent-browser-use:** the entire browser-automation engine.
+
+`silent-browser-use` does **not** vendor, fork, or modify any source code from
+`agent-browser`. We invoke the upstream CLI binary as a subprocess (typically
+`agent-browser connect --ws ws://127.0.0.1:9222/...`) and stream JSON events
+back to Python. When `agent-browser` releases a new version, users upgrade the
+binary independently and `silent-browser-use` follows automatically — no
+version pinning, no patch set to maintain.
+
+If `agent-browser`'s license terms ever conflict with this notice, the upstream
+license governs. See the upstream repository for the full text of the Apache
+License 2.0 and any `NOTICE` it ships.
+
+---
+
+## Design inspiration: browser-use / browser-harness
+
+- **Project:** https://github.com/browser-use/browser-use
+- **License:** MIT
+- **Maintainer:** browser-use organisation and contributors
+- **Role in silent-browser-use:** design inspiration only.
+
+The "persistent agent window" pattern — one long-lived browser window per user,
+many short-lived sessions reusing it, a snapshot-first ergonomics with ARIA
+refs — is borrowed directly from `browser-use` / `browser-harness`. Our Python
+implementation is written from scratch and does not copy upstream code; the
+shape of the API and the user-facing UX, however, owe a clear debt to that
+project.
+
+If you need a more feature-complete persistent browser harness with a richer
+ecosystem, go check out `browser-use` directly — it is excellent.
+
+---
+
+## Other prior art we learned from
+
+- **[Playwright](https://playwright.dev)** (Apache 2.0, Microsoft and contributors) — helper signatures (`fill`, `click`, `wait_for`) intentionally rhyme with Playwright's, so users coming from Playwright can guess our API correctly on the first try.
+- **[Puppeteer](https://pptr.dev)** (Apache 2.0, Google and contributors) — the spiritual ancestor of CDP-driven Chrome automation.
+- **[rebrowser-patches](https://github.com/rebrowser/rebrowser-patches)** — a reminder that stealth/anti-detection is a *separate* concern that we deliberately do not address; users needing it should compose those patches themselves.
+
+---
+
+## What we DID NOT fork
+
+- We did **not** fork `vercel-labs/agent-browser`. Subprocess invocation only.
+- We did **not** fork `browser-use/browser-harness`. From-scratch Python implementation, design inspiration only.
+
+If you spot any source code in this repository that appears to originate from
+either project and is not properly attributed, please open an issue — we will
+remove it or attribute it correctly within 24 hours.
+
+---
+
+## How to cite silent-browser-use
+
+```bibtex
+@software{silent_browser_use,
+  author  = {AKAK and contributors},
+  title   = {silent-browser-use: Companion toolkit for vercel-labs/agent-browser},
+  year    = {2026},
+  url     = {https://github.com/Jcxu97/silent-browser-use}
+}
+```
+
+---
+
+`silent-browser-use` itself is licensed under the [MIT License](LICENSE).
+Upstream projects retain their own licenses as listed above.

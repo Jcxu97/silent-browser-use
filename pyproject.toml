@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "silent-browser-use"
+version = "0.1.0"
+description = "Companion toolkit for vercel-labs/agent-browser — persistent Chrome profile, auto-login flow, Python wrapper, and Chinese-community vertical examples (BG3 mod / Nexus / etc)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "AKAK" }]
+keywords = ["browser", "automation", "agent", "llm", "agent-browser", "cdp", "claude", "gpt"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+dependencies = [
+    "psutil>=5.9",
+    "requests>=2.31",
+    "websocket-client>=1.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+silent-browser-use = "silent_browser_use.cli:main"
+sbu = "silent_browser_use.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Jcxu97/silent-browser-use"
+Issues = "https://github.com/Jcxu97/silent-browser-use/issues"
+Upstream = "https://github.com/vercel-labs/agent-browser"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/silent_browser_use"]
