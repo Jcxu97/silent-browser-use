@@ -39,23 +39,40 @@ python -c "from silent_browser_use import open_url, get_title; \
 sbu run "find a Nexus mod by id 12345 and dump description"
 ```
 
-## Core API (Python)
+## Core API (Python) — 40+ helpers, 100% coverage of agent-browser
 
 ```python
 from silent_browser_use import (
     # connection
-    ChromeProfile,                     # manages dedicated Chrome on port 9222
+    ChromeProfile, connect, set_cdp_port, install, is_installed,
     # login UX
-    LoginFlow, with_login_flow,         # see "Login flow" below
-    detect_login_required,              # heuristic: snapshot+url → bool
-    # operations (subprocess-wrap agent-browser CLI)
-    open_url, click, fill,
-    snapshot, screenshot,
-    get_text, get_url, get_title,
-    find_role,                          # find_role("button", "click", name="Submit")
-    chat,                               # agent-browser chat <instruction> passthrough
+    LoginFlow, with_login_flow, detect_login_required,
+    # core ops
+    open_url, click, fill, snapshot, screenshot,
+    # mouse / keyboard
+    dblclick, hover, focus, type_, press,
+    keyboard_type, keyboard_inserttext,
+    # selection / scroll
+    select, check, uncheck, scroll, scroll_into_view, drag, upload,
+    # inspection
+    get_text, get_url, get_title, get_html, get_value, get_attr,
+    get_count, get_box, get_styles, get_cdp_url,
+    is_visible, is_enabled, is_checked,
+    # semantic locators (ARIA / text / label / placeholder / etc)
+    find_role, find_text, find_label, find_placeholder, find_alt,
+    find_title, find_testid, find_first, find_last, find_nth,
+    # waits / output
+    wait, pdf, evaluate, close,
+    # natural-language drive
+    chat,
+    # escape hatch (any agent-browser command not wrapped above)
+    run,
 )
 ```
+
+`run("any", "command", "args...")` directly invokes `agent-browser` with
+those args, so even if a future agent-browser flag isn't wrapped, you can
+still use it: `run("screenshot", "--annotate", "out.png")`.
 
 ## Hard rules (NEVER violate)
 

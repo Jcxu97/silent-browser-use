@@ -176,11 +176,224 @@ def find_role(role: str, action: str = "click", name: str | None = None) -> None
     _run_ab(*args)
 
 
+# ---- mouse / keyboard input ------------------------------------------
+
+def dblclick(selector: str) -> None:
+    _run_ab("dblclick", selector)
+
+
+def hover(selector: str) -> None:
+    _run_ab("hover", selector)
+
+
+def focus(selector: str) -> None:
+    _run_ab("focus", selector)
+
+
+def type_(selector: str, text: str) -> None:
+    """`agent-browser type <selector> <text>` — append text to input. (`type` is reserved in Python.)"""
+    _run_ab("type", selector, text)
+
+
+def press(key: str) -> None:
+    """Press a single key or chord (e.g. 'Enter', 'Tab', 'Control+a')."""
+    _run_ab("press", key)
+
+
+def keyboard_type(text: str) -> None:
+    """Type with real keystrokes into the currently-focused element (no selector)."""
+    _run_ab("keyboard", "type", text)
+
+
+def keyboard_inserttext(text: str) -> None:
+    """Insert text without firing key events (faster, no IME quirks)."""
+    _run_ab("keyboard", "inserttext", text)
+
+
+def select(selector: str, value: str) -> None:
+    _run_ab("select", selector, value)
+
+
+def check(selector: str) -> None:
+    _run_ab("check", selector)
+
+
+def uncheck(selector: str) -> None:
+    _run_ab("uncheck", selector)
+
+
+def scroll(direction: str = "down", pixels: int | None = None, selector: str | None = None) -> None:
+    """`agent-browser scroll <up|down|left|right> [px] [--selector <sel>]`."""
+    args = ["scroll", direction]
+    if pixels is not None:
+        args.append(str(pixels))
+    if selector:
+        args += ["--selector", selector]
+    _run_ab(*args)
+
+
+def scroll_into_view(selector: str) -> None:
+    _run_ab("scrollintoview", selector)
+
+
+def drag(source: str, target: str) -> None:
+    _run_ab("drag", source, target)
+
+
+def upload(selector: str, *files: str) -> None:
+    _run_ab("upload", selector, *files)
+
+
+# ---- inspection (extended) -------------------------------------------
+
+def get_html(selector: str) -> str:
+    return _run_ab("get", "html", selector)
+
+
+def get_value(selector: str) -> str:
+    return _run_ab("get", "value", selector)
+
+
+def get_attr(selector: str, attr: str) -> str:
+    return _run_ab("get", "attr", selector, attr)
+
+
+def get_count(selector: str) -> int:
+    out = _run_ab("get", "count", selector)
+    return int(out.strip()) if out.strip().isdigit() else 0
+
+
+def get_box(selector: str) -> str:
+    return _run_ab("get", "box", selector)
+
+
+def get_styles(selector: str) -> str:
+    return _run_ab("get", "styles", selector)
+
+
+def get_cdp_url() -> str:
+    return _run_ab("get", "cdp-url")
+
+
+def is_visible(selector: str) -> bool:
+    return _run_ab("is", "visible", selector).strip().lower() == "true"
+
+
+def is_enabled(selector: str) -> bool:
+    return _run_ab("is", "enabled", selector).strip().lower() == "true"
+
+
+def is_checked(selector: str) -> bool:
+    return _run_ab("is", "checked", selector).strip().lower() == "true"
+
+
+# ---- semantic locators (find by ARIA / text / label / etc) -----------
+
+def find_text(text: str, action: str = "click", exact: bool = False) -> None:
+    args = ["find", "text", text, action]
+    if exact:
+        args.append("--exact")
+    _run_ab(*args)
+
+
+def find_label(label: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "label", label, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+def find_placeholder(placeholder: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "placeholder", placeholder, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+def find_alt(text: str, action: str = "click") -> None:
+    _run_ab("find", "alt", text, action)
+
+
+def find_title(text: str, action: str = "click") -> None:
+    _run_ab("find", "title", text, action)
+
+
+def find_testid(testid: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "testid", testid, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+def find_first(selector: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "first", selector, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+def find_last(selector: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "last", selector, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+def find_nth(n: int, selector: str, action: str = "click", value: str | None = None) -> None:
+    args = ["find", "nth", str(n), selector, action]
+    if value is not None:
+        args.append(value)
+    _run_ab(*args)
+
+
+# ---- waits -----------------------------------------------------------
+
+def wait(target: str | int, *, text: str | None = None, url: str | None = None,
+         load: str | None = None, fn: str | None = None) -> None:
+    """`agent-browser wait <selector|ms> [--text X | --url X | --load X | --fn X]`."""
+    args = ["wait", str(target)]
+    if text:    args += ["--text", text]
+    if url:     args += ["--url", url]
+    if load:    args += ["--load", load]
+    if fn:      args += ["--fn", fn]
+    _run_ab(*args, timeout=120)
+
+
+# ---- output (PDF / eval / close) -------------------------------------
+
+def pdf(path: str = "page.pdf") -> str:
+    _run_ab("pdf", path)
+    return path
+
+
+def evaluate(js: str) -> str:
+    """Run JavaScript in the page; returns stdout (stringified result)."""
+    return _run_ab("eval", js)
+
+
+def close(all_sessions: bool = False) -> None:
+    args = ["close"]
+    if all_sessions:
+        args.append("--all")
+    _run_ab(*args)
+
+
 # ---- LLM-driven natural-language step --------------------------------
 
 def chat(instruction: str) -> str:
     """Send a free-form instruction to agent-browser's chat mode."""
     return _run_ab("chat", instruction, timeout=300)
+
+
+# ---- generic escape hatch (any agent-browser command we forgot) ------
+
+def run(*args: str, timeout: int = DEFAULT_TIMEOUT) -> str:
+    """Pass-through to `agent-browser <args>`. Use for any command not
+    covered by a typed helper above. Example::
+
+        run("screenshot", "--annotate", "shots/labeled.png")
+    """
+    return _run_ab(*args, timeout=timeout)
 
 
 if __name__ == "__main__":
