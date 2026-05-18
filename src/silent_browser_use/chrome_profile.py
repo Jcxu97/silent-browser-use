@@ -90,19 +90,32 @@ class ChromeProfile:
                 continue
         return False
 
-    def start(self) -> None:
+    def start(self, visible: bool = False) -> None:
         if self.is_running():
             return
         args = [
             self._chrome_path,
             f"--remote-debugging-port={self.port}",
+            f"--remote-allow-origins=*",
             f"--user-data-dir={self.profile_dir}",
             "--no-first-run",
             "--no-default-browser-check",
-            "--disable-features=ChromeWhatsNewUI",
-            f"--window-position={HIDDEN_LEFT},{HIDDEN_TOP}",
-            "--window-size=1280,900",
+            # Anti-bot-detection — Cloudflare Turnstile / hCaptcha look at these.
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=ChromeWhatsNewUI,IsolateOrigins,site-per-process",
+            "--exclude-switches=enable-automation",
+            "--disable-infobars",
         ]
+        if visible:
+            # Visible startup — for first-time login flow / cloudflare challenge.
+            # Maximized on primary monitor, foreground.
+            args += ["--start-maximized"]
+        else:
+            # Headless-feel: off-screen geometry but still rendering.
+            args += [
+                f"--window-position={HIDDEN_LEFT},{HIDDEN_TOP}",
+                "--window-size=1280,900",
+            ]
         kwargs: dict = {"close_fds": True}
         if platform.system() == "Windows":
             DETACHED_PROCESS = 0x00000008
@@ -117,6 +130,7 @@ class ChromeProfile:
             try:
                 r = requests.get(f"http://127.0.0.1:{self.port}/json/version", timeout=0.5)
                 if r.ok:
+                    self._apply_stealth()
                     return
             except requests.RequestException:
                 pass
@@ -162,6 +176,95 @@ class ChromeProfile:
         finally:
             ws.close()
 
+    # ---- stealth: hide CDP/automation fingerprints from Cloudflare/hCaptcha ----
+
+    _STEALTH_JS = r"""
+    // 1. webdriver flag — biggest tell. Chrome sets this read-only on Navigator.prototype,
+    //    but we can delete from prototype before any page script reads it.
+    try {
+        delete Navigator.prototype.webdriver;
+    } catch(_) {}
+    Object.defineProperty(Navigator.prototype, 'webdriver', {
+        get: () => undefined,
+        configurable: true,
+    });
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+
+    // 2. plugins — vanilla Chrome has 3+; CDP-launched often shows []
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+            {0: {type: 'application/x-google-chrome-pdf'}, description: 'PDF Viewer', filename: 'internal-pdf-viewer', length: 1, name: 'PDF Viewer'},
+            {0: {type: 'application/pdf'}, description: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', length: 1, name: 'Chrome PDF Viewer'},
+            {0: {type: 'application/x-nacl'}, description: 'Native Client Executable', filename: 'internal-nacl-plugin', length: 1, name: 'Native Client'}
+        ]
+    });
+
+    // 3. languages — must be non-empty
+    Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en-US', 'en']});
+
+    // 4. window.chrome — vanilla has chrome.runtime; CDP often misses it
+    if (!window.chrome || !window.chrome.runtime) {
+        window.chrome = window.chrome || {};
+        window.chrome.runtime = window.chrome.runtime || {};
+    }
+
+    // 5. permissions API — Notification permission must agree with state
+    if (window.navigator.permissions && window.navigator.permissions.query) {
+        const origQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (params) =>
+            params.name === 'notifications'
+                ? Promise.resolve({state: Notification.permission})
+                : origQuery(params);
+    }
+
+    // 6. WebGL vendor/renderer — CDP often shows 'Google Inc.'
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        // UNMASKED_VENDOR_WEBGL = 37445; UNMASKED_RENDERER_WEBGL = 37446
+        if (parameter === 37445) return 'Intel Inc.';
+        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+        return getParameter.apply(this, arguments);
+    };
+
+    // 7. iframe contentWindow chrome property
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+        get: function() {
+            const win = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow').get.call(this);
+            try { if (win && !win.chrome) win.chrome = {runtime: {}}; } catch(_) {}
+            return win;
+        }
+    });
+    """
+
+    def _apply_stealth(self) -> None:
+        """Register stealth.js as auto-inject-on-new-document for every browser target.
+
+        Uses CDP Page.addScriptToEvaluateOnNewDocument on each existing page target
+        plus auto-applies to new targets via Target.setAutoAttach.
+        """
+        try:
+            # Get all existing page targets
+            targets = requests.get(f"http://127.0.0.1:{self.port}/json", timeout=2).json()
+            for t in targets:
+                if t.get("type") != "page":
+                    continue
+                try:
+                    ws_url = t.get("webSocketDebuggerUrl")
+                    if not ws_url:
+                        continue
+                    ws = create_connection(ws_url, timeout=3)
+                    ws.send(json.dumps({
+                        "id": 1,
+                        "method": "Page.addScriptToEvaluateOnNewDocument",
+                        "params": {"source": self._STEALTH_JS},
+                    }))
+                    ws.recv()
+                    ws.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def _get_window_id(self) -> int:
         targets = requests.get(f"http://127.0.0.1:{self.port}/json", timeout=2).json()
         page = next((t for t in targets if t.get("type") == "page"), None)
@@ -173,20 +276,174 @@ class ChromeProfile:
         res = self._cdp_send("Browser.getWindowForTarget", {"targetId": target_id})
         return res["windowId"]
 
-    def show_window(self, left: int = 200, top: int = 100, width: int = 1280, height: int = 900) -> None:
+    def show_window(self, left: int | None = None, top: int | None = None,
+                    width: int | None = None, height: int | None = None,
+                    maximize: bool = True) -> None:
+        """Bring the dedicated Chrome to foreground on the user's PRIMARY monitor.
+
+        Strategy:
+            1) windowState=normal (rejects geometry while maximized/minimized)
+            2) move to primary monitor (left=100, top=100) so the window LIVES there
+            3) optionally maximize on that monitor
+
+        Without step 2, a chrome that started off-screen at (-32000,-32000) may
+        maximize onto a non-existent virtual monitor and the user never sees it.
+        """
         wid = self._get_window_id()
-        # First normalize state, then set bounds (CDP rejects bounds while minimized).
+        # Step 1: normalize state
         self._cdp_send(
             "Browser.setWindowBounds",
             {"windowId": wid, "bounds": {"windowState": "normal"}},
         )
+        # Step 2: relocate to primary monitor first (always at (100, 100) — primary's top-left)
         self._cdp_send(
             "Browser.setWindowBounds",
-            {
-                "windowId": wid,
-                "bounds": {"left": left, "top": top, "width": width, "height": height},
-            },
+            {"windowId": wid, "bounds": {
+                "left": left if left is not None else 100,
+                "top": top if top is not None else 100,
+                "width": width or 1280,
+                "height": height or 900,
+            }},
         )
+        # Step 3: maximize if requested (will maximize on the monitor it currently lives on,
+        # which we just forced to be primary).
+        if maximize and left is None and top is None:
+            self._cdp_send(
+                "Browser.setWindowBounds",
+                {"windowId": wid, "bounds": {"windowState": "maximized"}},
+            )
+        # Step 4: bring to z-top via CDP
+        try:
+            targets = requests.get(f"http://127.0.0.1:{self.port}/json", timeout=2).json()
+            page = next((t for t in targets if t.get("type") == "page"), None)
+            if page:
+                self._cdp_send("Target.activateTarget", {"targetId": page["id"]})
+                self._cdp_send("Page.bringToFront", {})
+        except Exception:
+            pass
+        # Step 5: Win32 flash + foreground (Windows-specific, gracefully no-op elsewhere)
+        import sys
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
+            # Find Chrome window of our profile
+            marker = str(self.profile_dir.resolve()).lower()
+            target_pids = set()
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                try:
+                    cmd = " ".join(str(x) for x in (proc.info.get("cmdline") or [])).lower()
+                    if marker in cmd:
+                        target_pids.add(proc.info["pid"])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+            found = [None]
+
+            def cb(hwnd, _):
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                pid = ctypes.c_ulong(0)
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in target_pids:
+                    if user32.GetWindowTextLengthW(hwnd) > 5:
+                        found[0] = hwnd
+                        return False
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(cb), None)
+            hwnd = found[0]
+            if not hwnd:
+                return
+
+            # FlashWindowEx — make taskbar icon flash to grab attention
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.c_uint),
+                    ("hwnd", ctypes.c_void_p),
+                    ("dwFlags", ctypes.c_uint),
+                    ("uCount", ctypes.c_uint),
+                    ("dwTimeout", ctypes.c_uint),
+                ]
+            FLASHW_ALL = 3
+            FLASHW_TIMERNOFG = 12  # flash until brought to fg
+            fi = FLASHWINFO(
+                ctypes.sizeof(FLASHWINFO), hwnd,
+                FLASHW_ALL | FLASHW_TIMERNOFG, 10, 0,
+            )
+            user32.FlashWindowEx(ctypes.byref(fi))
+
+            # Maximize via Win32 (CDP setBounds maximized sometimes silently fails)
+            SW_SHOWMAXIMIZED = 3
+            user32.ShowWindow(hwnd, SW_SHOWMAXIMIZED)
+
+            # Bring-to-front trick: AttachThreadInput + SetForegroundWindow
+            fg = user32.GetForegroundWindow()
+            fg_thread = user32.GetWindowThreadProcessId(fg, None)
+            our_thread = kernel32.GetCurrentThreadId()
+            user32.AttachThreadInput(our_thread, fg_thread, True)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+            user32.AttachThreadInput(our_thread, fg_thread, False)
+        except Exception:
+            pass
+        # Bring to front + activate so user actually sees it (z-top + foreground).
+        try:
+            targets = requests.get(f"http://127.0.0.1:{self.port}/json", timeout=2).json()
+            page = next((t for t in targets if t.get("type") == "page"), None)
+            if page:
+                self._cdp_send("Target.activateTarget", {"targetId": page["id"]})
+                self._cdp_send("Page.bringToFront", {})
+        except Exception:
+            pass
+        # On Windows, additionally use Win32 SetForegroundWindow to surface above other apps.
+        import sys
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                # Find any Chrome window for our profile (by class name + title fragment is hard;
+                # easier: enumerate top-level windows whose title ends with "Google Chrome" and
+                # whose process cmdline includes our profile_dir).
+                marker = str(self.profile_dir.resolve()).lower()
+                target_pids = set()
+                for proc in psutil.process_iter(["pid", "cmdline"]):
+                    try:
+                        cmd = " ".join(str(x) for x in (proc.info.get("cmdline") or [])).lower()
+                        if marker in cmd:
+                            target_pids.add(proc.info["pid"])
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+
+                EnumWindows = user32.EnumWindows
+                EnumWindowsProc = ctypes.WINFUNCTYPE(
+                    ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p
+                )
+                GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+                IsWindowVisible = user32.IsWindowVisible
+                SetForegroundWindow = user32.SetForegroundWindow
+                ShowWindow = user32.ShowWindow
+                SW_RESTORE = 9
+
+                def cb(hwnd, _):
+                    if not IsWindowVisible(hwnd):
+                        return True
+                    pid = ctypes.c_ulong(0)
+                    GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value in target_pids:
+                        ShowWindow(hwnd, SW_RESTORE)
+                        SetForegroundWindow(hwnd)
+                        return False  # stop enumerating
+                    return True
+
+                EnumWindows(EnumWindowsProc(cb), None)
+            except Exception:
+                pass
 
     def hide_window(self) -> None:
         wid = self._get_window_id()

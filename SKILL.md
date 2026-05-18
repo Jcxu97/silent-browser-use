@@ -24,6 +24,32 @@ log in again unless they truly haven't yet.
 - Reading a public GitHub README → `gh api repos/<o>/<r>/readme`, no browser needed.
 - Anything that runs in CI / headless servers → use upstream `agent-browser` directly (it's headless-friendly), this skill is for the user's local desktop.
 
+## First-run setup for login-walled sites (one-time)
+
+For sites behind Cloudflare or sign-in walls (Nexus Mods, Patreon, internal
+dashboards), you must complete login ONCE in the dedicated Chrome profile
+so cookies persist on disk:
+
+```python
+from silent_browser_use import ChromeProfile, open_url
+profile = ChromeProfile()
+profile.start(visible=True)   # NEW: chrome appears maximized on primary monitor
+open_url("https://www.nexusmods.com/")
+# user manually clicks Cloudflare + signs in
+# cookies are written to ~/.silent-browser-use/chrome-profile/
+# every future task uses these cookies
+```
+
+Notes on Cloudflare-protected sites:
+- `navigator.webdriver` flag is set true by Chrome v8 whenever
+  `--remote-debugging-port` is used. We patch plugins/languages/WebGL via
+  stealth.js but **cannot delete the v8-level webdriver flag** without
+  patching the chrome binary (undetected-chromedriver does this).
+- This means **fresh Cloudflare challenges may still block** even with
+  stealth.js. Once the user manually completes the challenge ONCE while
+  signed in, Cloudflare cookies + Nexus session cookies persist and bypass
+  challenges on subsequent visits.
+
 ## Quick start (3 commands)
 
 ```bash
