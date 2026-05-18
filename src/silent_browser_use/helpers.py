@@ -45,8 +45,21 @@ _active_cdp_port: int | None = None
 
 
 def set_cdp_port(port: int | None) -> None:
-    """Tell every subsequent agent-browser call to attach to this port. Pass None to clear."""
+    """Tell every subsequent agent-browser call to attach to this port. Pass None to clear.
+
+    HARD RULE — silent-browser-use NEVER attaches the user's daily Chrome.
+    Port 9222 is the standard chrome://inspect runtime CDP port, used by the
+    user's main browser. Forbidden. Use 9333 (silent-browser-use's spawned
+    chrome) instead.
+    """
     global _active_cdp_port
+    if port == 9222:
+        raise RuntimeError(
+            "BANNED: set_cdp_port(9222) attaches the user's daily Chrome. "
+            "silent-browser-use must spawn its own Chrome instance on port "
+            "9333 with its own user-data-dir. See memory: "
+            "feedback_browser_separate_instance_HARD.md"
+        )
     _active_cdp_port = port
 
 

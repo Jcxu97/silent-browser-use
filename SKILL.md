@@ -1,13 +1,36 @@
 ---
 name: silent-browser-use
-description: Drive your real logged-in Chrome via agent-browser. Persistent profile + auto-login flow + Pythonic helpers. Use this for ANY task that touches a website — scraping, automation, form fill, login walls, BG3 / Nexus / GitHub / Notion / Linear, etc.
+description: Drive a DEDICATED hidden Chrome (port 9333) via agent-browser — NEVER touches the user's daily Chrome. Persistent profile + auto-login + Pythonic helpers.
 ---
 
 # silent-browser-use — Skill instructions for Claude / GPT / any LLM
 
-This skill is the **default browser tool** for this user. It wraps
-[vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser) and
-adds persistent Chrome profile + auto-login. The user has logged into common
+# 🚨 HARD RULE — DO NOT VIOLATE 🚨
+
+**This skill operates ONLY on a dedicated Chrome instance (port 9333) that
+silent-browser-use spawns and owns. It NEVER attaches the user's daily Chrome.**
+
+- ✅ ALLOWED: `ChromeProfile(port=9333).start()` — spawn dedicated chrome
+- ❌ FORBIDDEN: `set_cdp_port(9222)` — that's the user's daily Chrome (raises RuntimeError)
+- ❌ FORBIDDEN: `agent-browser tab list` / `tab t2` on port 9222 — touches user's tabs
+- ❌ FORBIDDEN: any "borrow user chrome to bypass cloudflare" workaround
+
+**All silent-browser-use operations happen in a hidden window of the spawned
+9333 chrome, off-screen at (-32000, -32000). The user never sees it,
+silent-browser-use NEVER pops to foreground unless first-time setup explicitly
+calls `show_window()`, after which `hide_window()` is mandatory.**
+
+If 9333 chrome runs into Cloudflare, the answer is: (1) one-time visible
+setup so user clicks Cloudflare + cookies persist to dedicated profile, OR
+(2) integrate undetected-chromedriver to remove webdriver fingerprint. NEVER
+fall back to the user's daily Chrome.
+
+See: memory `feedback_browser_separate_instance_HARD.md`.
+
+---
+
+This skill wraps [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser)
+and adds persistent Chrome profile + auto-login. The user has logged into common
 sites (Nexus, GitHub, Notion, Bilibili, etc.) ONCE in the dedicated Chrome
 profile — your job is to use those existing sessions, never to ask them to
 log in again unless they truly haven't yet.
