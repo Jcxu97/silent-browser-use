@@ -44,6 +44,10 @@ AGENT_BROWSER_BIN = _agent_browser_bin()
 _active_cdp_port: int | None = None
 
 
+DEDICATED_PORT = 9333  # silent-browser-use's owned chrome
+BANNED_PORTS = {9222}  # user's daily chrome — never attach
+
+
 def set_cdp_port(port: int | None) -> None:
     """Tell every subsequent agent-browser call to attach to this port. Pass None to clear.
 
@@ -53,9 +57,9 @@ def set_cdp_port(port: int | None) -> None:
     chrome) instead.
     """
     global _active_cdp_port
-    if port == 9222:
+    if port in BANNED_PORTS:
         raise RuntimeError(
-            "BANNED: set_cdp_port(9222) attaches the user's daily Chrome. "
+            f"BANNED: set_cdp_port({port}) attaches the user's daily Chrome. "
             "silent-browser-use must spawn its own Chrome instance on port "
             "9333 with its own user-data-dir. See memory: "
             "feedback_browser_separate_instance_HARD.md"
@@ -63,13 +67,29 @@ def set_cdp_port(port: int | None) -> None:
     _active_cdp_port = port
 
 
-def _resolve_cdp_port() -> int | None:
+def _resolve_cdp_port() -> int:
+    """Always returns a port. Defaults to DEDICATED_PORT (9333). NEVER None.
+
+    A None default would let agent-browser auto-discover and attach the
+    user's daily Chrome, which is an unrecoverable rule violation.
+    """
     if _active_cdp_port is not None:
+        if _active_cdp_port in BANNED_PORTS:
+            raise RuntimeError(
+                f"_active_cdp_port = {_active_cdp_port} is BANNED. "
+                "Reset to None or DEDICATED_PORT."
+            )
         return _active_cdp_port
     env = os.environ.get("SBU_CDP_PORT")
     if env and env.isdigit():
-        return int(env)
-    return None
+        port = int(env)
+        if port in BANNED_PORTS:
+            raise RuntimeError(
+                f"SBU_CDP_PORT env = {port} is BANNED. Unset it."
+            )
+        return port
+    # Default to dedicated 9333 — never None, never user's chrome.
+    return DEDICATED_PORT
 
 
 def _run_ab(*args: str, capture: bool = True, timeout: int = DEFAULT_TIMEOUT) -> str:
